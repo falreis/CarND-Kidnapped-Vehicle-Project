@@ -81,7 +81,7 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	//   implement this method and use it as a helper during the updateWeights phase.
 
 	for(int i=0; i<observations.size(); i++){
-		double min_id = 0;
+		double min_id = -1;
 		double min_distance = INFINITY;
 
 		for(int j=0; j<predicted.size(); j++){
@@ -94,7 +94,10 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 				min_id = predicted[j].id;
 			}
 		}
-		observations[i].id = min_id;
+
+		if(min_id >= 0){
+			observations[i].id = min_id;
+		}
 	}
 }
 
@@ -130,7 +133,10 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		std::vector<double>sense_x;
 		std::vector<double> sense_y;
 
-		for(int j=0; j<t_observations.size(); j++){
+		//TODO: landmarks_size and observantion shouldn't allways be the same??
+		int t_size = (t_landmarks.size() > t_observations.size())? t_observations.size() : t_landmarks.size();
+
+		for(int j=0; j<t_size; j++){
 			double x_obs = t_observations.at(j).x;
 			double y_obs = t_observations.at(j).y;
 			int id_obs = t_observations.at(j).id;
@@ -175,7 +181,7 @@ void ParticleFilter::resample() {
 	for(int i=0; i<this->num_particles; i++){
 		int index = distrib(rand);
 		tmp.push_back(this->particles[index]);
-		this->weights[i] = this->particles[index].id;
+		this->weights[i] = this->particles[index].weight;
 	}
 	this->particles = tmp;
 }

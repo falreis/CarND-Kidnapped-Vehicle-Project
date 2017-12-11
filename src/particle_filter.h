@@ -111,6 +111,21 @@ public:
 	const bool initialized() const {
 		return is_initialized;
 	}
+
+	/**
+	 * Transform landmarks coordinates into a common coordinate system
+	 * @param map_landmarks Landmarks coordinates
+	 * @param sensor_range Sensor range, use to transform landmark coordinates
+	 * @param particle_filter_index Index of particle filter
+	*/
+	std::vector<LandmarkObs> transformLandmarks(const Map &map_landmarks, double sensor_range, const int particle_filter_index);
+
+	/**
+	 * Transform observation coordinates into a common coordinate system
+	 * @param observations Observation coordinates
+	 * @param particle_filter_index Index of particle filter
+	*/
+	std::vector<LandmarkObs> transformObservations(const std::vector<LandmarkObs> &observations, const int particle_filter_index);
 };
 
 

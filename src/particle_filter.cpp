@@ -25,7 +25,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
 	this->num_particles = 100;
-	int default_weight = 1.0f / this->num_particles;
+	double default_weight = 1.0f / this->num_particles;
 
 	this->weights.resize(this->num_particles, default_weight);
 
@@ -110,6 +110,57 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   and the following is a good resource for the actual equation to implement (look at equation 
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
+
+	for(int i=0; i<this->num_particles; i++){
+		//transform landmarks into unique coordinate system
+		vector<LandmarkObs> t_landmarks = this->transformLandmarks(map_landmarks, sensor_range, i);
+		
+		//transform observations into unique coordinate system
+		vector<LandmarkObs> t_observations = this->transformObservations(observations, i);
+
+		//make data association
+		this->dataAssociation(t_landmarks, t_observations);
+
+		//define variables
+		double weight = 1.0;
+		double sig_x = std_landmark[0];
+		double sig_y = std_landmark[1];
+
+		std::vector<int> associations;
+		std::vector<double>sense_x;
+		std::vector<double> sense_y;
+
+		for(int j=0; j<t_observations.size(); j++){
+			double x_obs = t_observations.at(j).x;
+			double y_obs = t_observations.at(j).y;
+			int id_obs = t_observations.at(j).id;
+
+			double mu_x = t_landmarks.at(j).x;
+			double mu_y = t_landmarks.at(j).y;
+			int mu_id = t_landmarks.at(j).id;	
+
+			//calculate normalization term
+			double gauss_norm= (1/(2 * M_PI * sig_x * sig_y));
+
+			//calculate exponent
+			double exponent= (pow((x_obs - mu_x),2)/(2 * pow(sig_x,2))) + (pow((y_obs - mu_y),2)/ pow((2 * sig_y), 2));
+
+			//calculate weight using normalization terms and exponent
+			weight += gauss_norm * exp(-exponent);
+
+			//set particle associations
+			associations.push_back(id_obs);
+			sense_x.push_back(x_obs);
+			sense_y.push_back(y_obs);
+		}
+		this->particles[i].weight = exp(weight);
+		//this->particles[i] = this->SetAssociations(this->particles[i], associations, sense_x, sense_y);
+
+		this->particles[i].associations = associations;
+		this->particles[i].sense_x = sense_x;
+		this->particles[i].sense_y = sense_y;
+		this->weights[i] = this->particles[i].weight;
+	}
 }
 
 void ParticleFilter::resample() {
@@ -117,6 +168,16 @@ void ParticleFilter::resample() {
 	// NOTE: You may find std::discrete_distribution helpful here.
 	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
 
+    discrete_distribution<int> distrib(weights.begin(), weights.end());
+	default_random_engine rand;
+	std::vector<Particle> tmp;
+
+	for(int i=0; i<this->num_particles; i++){
+		int index = distrib(rand);
+		tmp.push_back(this->particles[index]);
+		this->weights[i] = this->particles[index].id;
+	}
+	this->particles = tmp;
 }
 
 Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<int>& associations, 
@@ -126,6 +187,10 @@ Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<i
     // associations: The landmark id that goes along with each listed association
     // sense_x: the associations x mapping already converted to world coordinates
     // sense_y: the associations y mapping already converted to world coordinates
+
+	particle.associations.clear();
+	particle.sense_x.clear();
+	particle.sense_y.clear();
 
     particle.associations= associations;
     particle.sense_x = sense_x;
@@ -158,4 +223,55 @@ string ParticleFilter::getSenseY(Particle best)
     string s = ss.str();
     s = s.substr(0, s.length()-1);  // get rid of the trailing space
     return s;
+}
+
+vector<LandmarkObs> ParticleFilter::transformLandmarks(const Map &map_landmarks, 
+		const double sensor_range, const int particle_filter_index)
+{
+	vector<LandmarkObs> my_landmarks;
+	double pred_value;
+
+	//transform landmarks into unique coordinate system
+	for(int j=0; j<map_landmarks.landmark_list.size(); j++){
+		double mx = map_landmarks.landmark_list.at(j).x_f;
+		double my = map_landmarks.landmark_list.at(j).y_f;
+		double mi = map_landmarks.landmark_list.at(j).id_i;
+
+		pred_value = pow((mx - this->particles[particle_filter_index].x), 2) + pow((my - this->particles[particle_filter_index].y), 2);
+
+		if (pred_value <= pow(sensor_range,2)){
+			LandmarkObs land;
+			land.x = map_landmarks.landmark_list.at(j).x_f;
+			land.y = map_landmarks.landmark_list.at(j).y_f;
+			land.id = map_landmarks.landmark_list.at(j).id_i;
+			my_landmarks.push_back(land);
+		}
+	}
+
+	return my_landmarks;
+}
+
+vector<LandmarkObs> ParticleFilter::transformObservations(const vector<LandmarkObs> &observations,
+		const int particle_filter_index)
+{
+	vector<LandmarkObs> my_observations;
+	int pfi = particle_filter_index;
+
+	//transform observations into unique coordinate system
+	for(int j=0; j<observations.size(); j++){
+		double ox = observations.at(j).x;
+		double oy = observations.at(j).y;
+
+		LandmarkObs observ;
+		//transform to map x coordinate
+		observ.x = (this->particles[pfi].x) + (cos(this->particles[pfi].theta)*ox) - (sin(this->particles[pfi].theta)*oy);
+
+		//transform to map y coordinate
+		observ.y = (this->particles[pfi].y) + (sin(this->particles[pfi].theta)*ox) + (cos(this->particles[pfi].theta)*oy);
+
+		observ.id = observations.at(j).id;
+		my_observations.push_back(observ);
+	}
+
+	return my_observations;
 }

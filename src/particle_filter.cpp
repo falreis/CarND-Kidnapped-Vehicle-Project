@@ -25,9 +25,6 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
 	this->num_particles = 100;
-	double default_weight = 1.0f / this->num_particles;
-
-	this->weights.resize(this->num_particles, default_weight);
 
 	normal_distribution<double> normal_x(x, std[0]);
 	normal_distribution<double> normal_y(y, std[1]);
@@ -40,8 +37,9 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 		particle.x = normal_x(rand);
 		particle.y = normal_y(rand);
 		particle.theta = NormalizeAngle(normal_theta(rand));
-		particle.weight = default_weight;
+		particle.weight = this->default_weight;
 		this->particles.push_back(particle);
+		this->weights.push_back(this->default_weight);
 	}
 
 	this->is_initialized = true;
@@ -63,14 +61,23 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 
 	for(int i=0; i<this->num_particles; i++){
 		//update x, y and theta
-		this->particles[i].x += ((velocity/yaw_rate) * (sin(yaw0 + yaw_dev)-sin(yaw0)));
-		this->particles[i].y += ((velocity/yaw_rate) * (cos(yaw0) - cos(yaw0 + yaw_dev)));
-		this->particles[i].theta += yaw_dev;
+		if(fabs(yaw_rate) < 0.001){
+			particles[i].x += velocity * delta_t * cos(particles[i].theta);
+			particles[i].y += velocity * delta_t * sin(particles[i].theta);
+		}
+		else{
+			this->particles[i].x += ((velocity/yaw_rate) * (sin(yaw0 + yaw_dev)-sin(yaw0)));
+			this->particles[i].y += ((velocity/yaw_rate) * (cos(yaw0) - cos(yaw0 + yaw_dev)));
+			this->particles[i].theta += yaw_dev;
+		}
 
 		//add random noise
 		this->particles[i].x += normal_x(rand);
 		this->particles[i].y += normal_y(rand);
 		this->particles[i].theta += normal_theta(rand);
+
+		//normalize theta
+		this->particles[i].theta = NormalizeAngle(this->particles[i].theta);
 	}
 }
 
@@ -80,11 +87,13 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
 
-	for(int i=0; i<observations.size(); i++){
+	int t_size = (observations.size() > predicted.size()) ? predicted.size() : observations.size();
+
+	for(int i=0; i<t_size; i++){
 		double min_id = -1;
 		double min_distance = INFINITY;
 
-		for(int j=0; j<predicted.size(); j++){
+		for(int j=0; j<t_size; j++){
 			double x = predicted[j].x - observations[i].x;
 			double y = predicted[j].y - observations[i].y;
 			double distance = sqrt(pow(x,2) + pow(y,2));
@@ -125,7 +134,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		this->dataAssociation(t_landmarks, t_observations);
 
 		//define variables
-		double weight = 1.0;
+		double weight = this->default_weight;
 		double sig_x = std_landmark[0];
 		double sig_y = std_landmark[1];
 
@@ -141,9 +150,19 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			double y_obs = t_observations.at(j).y;
 			int id_obs = t_observations.at(j).id;
 
-			double mu_x = t_landmarks.at(j).x;
-			double mu_y = t_landmarks.at(j).y;
-			int mu_id = t_landmarks.at(j).id;	
+			int index_l = -1;
+			for(int k=0; (k<t_landmarks.size() && index_l < 0); k++){
+				if(t_landmarks.at(k).id == t_observations.at(j).id){
+					index_l = k;
+				}
+			}
+
+			if(index_l < 0)
+				break;
+
+			double mu_x = t_landmarks.at(index_l).x;
+			double mu_y = t_landmarks.at(index_l).y;
+			int mu_id = t_landmarks.at(index_l).id;	
 
 			//calculate normalization term
 			double gauss_norm= (1/(2 * M_PI * sig_x * sig_y));
@@ -159,13 +178,9 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			sense_x.push_back(x_obs);
 			sense_y.push_back(y_obs);
 		}
-		this->particles[i].weight = exp(weight);
-		//this->particles[i] = this->SetAssociations(this->particles[i], associations, sense_x, sense_y);
-
-		this->particles[i].associations = associations;
-		this->particles[i].sense_x = sense_x;
-		this->particles[i].sense_y = sense_y;
-		this->weights[i] = this->particles[i].weight;
+		this->particles[i].weight = weight;
+		this->particles[i] = this->SetAssociations(this->particles[i], associations, sense_x, sense_y);
+		this->weights[i] = weight;
 	}
 }
 
@@ -176,14 +191,12 @@ void ParticleFilter::resample() {
 
     discrete_distribution<int> distrib(weights.begin(), weights.end());
 	default_random_engine rand;
-	std::vector<Particle> tmp;
+	std::vector<Particle> new_particles;
 
 	for(int i=0; i<this->num_particles; i++){
-		int index = distrib(rand);
-		tmp.push_back(this->particles[index]);
-		this->weights[i] = this->particles[index].weight;
+		new_particles.push_back(this->particles[distrib(rand)]);
 	}
-	this->particles = tmp;
+	this->particles = new_particles;
 }
 
 Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<int>& associations, 
@@ -194,13 +207,11 @@ Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<i
     // sense_x: the associations x mapping already converted to world coordinates
     // sense_y: the associations y mapping already converted to world coordinates
 
-	particle.associations.clear();
-	particle.sense_x.clear();
-	particle.sense_y.clear();
-
     particle.associations= associations;
     particle.sense_x = sense_x;
     particle.sense_y = sense_y;
+
+	return particle;
 }
 
 string ParticleFilter::getAssociations(Particle best)

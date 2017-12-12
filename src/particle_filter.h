@@ -30,6 +30,9 @@ class ParticleFilter {
 	
 	// Flag, if filter is initialized
 	bool is_initialized;
+
+	//default weight value
+	const double default_weight = 1.0f;
 	
 	// Vector of weights of all particles
 	std::vector<double> weights;

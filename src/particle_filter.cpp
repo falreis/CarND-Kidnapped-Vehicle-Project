@@ -136,7 +136,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 		std::vector<int> associations;
 		std::vector<double>sense_x;
-		std::vector<double> sense_y;
+		std::vector<double> sense_y; 
 
 		//TODO: landmarks_size and observantion shouldn't allways be the same??
 		int t_size = (t_landmarks.size() > t_observations.size())? t_observations.size() : t_landmarks.size();

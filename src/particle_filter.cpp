@@ -128,9 +128,10 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		this->dataAssociation(t_landmarks, t_observations);
 
 		//define variables
-		double weight = 0;
+		double weight = 1;
 		double sig_x = std_landmark[0];
 		double sig_y = std_landmark[1];
+		double gauss_norm= (1/(2 * M_PI * sig_x * sig_y));	//calculate normalization term
 		int index_l = -1;
 
 		std::vector<int> associations;
@@ -146,9 +147,11 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			int id_obs = t_observations.at(j).id;
 
 			index_l = -1;
-			for(int k=0; (k<t_landmarks.size() && index_l < 0); k++){
-				if(t_landmarks.at(k).id == t_observations.at(j).id){
-					index_l = k;
+			if(t_landmarks.size() > 0 && t_observations.size() > 0){
+				for(int k=0; (k<t_landmarks.size() && index_l < 0); k++){
+					if(t_landmarks.at(k).id == t_observations.at(j).id){
+						index_l = k;
+					}
 				}
 			}
 
@@ -157,14 +160,11 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 				double mu_x = t_landmarks.at(index_l).x;
 				double mu_y = t_landmarks.at(index_l).y;
 
-				//calculate normalization term
-				double gauss_norm= (1/(2 * M_PI * sig_x * sig_y));
-
 				//calculate exponent
 				double exponent= (pow((x_obs-mu_x),2)/(2*pow(sig_x,2))) + (pow((y_obs-mu_y),2)/ (2*pow(sig_y, 2)));
 
 				//calculate weight using normalization terms and exponent
-				weight += gauss_norm * exp(-exponent);
+				weight *= gauss_norm * exp(-exponent);
 
 				//set particle associations
 				associations.push_back(id_obs);
